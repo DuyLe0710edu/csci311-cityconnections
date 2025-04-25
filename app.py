@@ -5,6 +5,7 @@ import json
 import time
 from collections import defaultdict
 import heapq
+import random
 
 app = Flask(__name__)
 CORS(app)
@@ -14,7 +15,8 @@ DATASETS = {
     'north_america': 'database/North_America.txt',
     'san_francisco': 'database/San_fran.txt',
     'san_joaquin': 'database/San_joa.txt',
-    'oldenburg': 'database/Oldenburg.txt'
+    'oldenburg': 'database/Oldenburg.txt',
+    'generated': 'Generated Graph'  # Special marker for randomly generated graphs
 }
 
 class UnionFind:
@@ -161,6 +163,65 @@ def kruskal_mst_with_steps(edges):
         'steps': steps
     }
 
+# Add a function to generate random graphs
+def generate_random_graph(min_nodes=8, max_nodes=20):
+    """Generate a random graph with given parameters"""
+    print(f"\n{'='*50}")
+    print(f"Generating random graph with {min_nodes}-{max_nodes} nodes")
+    start_time = time.time()
+    
+    # Generate a random number of nodes
+    num_nodes = random.randint(min_nodes, max_nodes)
+    nodes = list(range(1, num_nodes + 1))
+    
+    # Create a basic connected structure (spanning tree) to ensure graph is connected
+    edges = []
+    edge_id = 0
+    
+    # First connect all nodes in a path to ensure basic connectivity
+    for i in range(len(nodes) - 1):
+        weight = round(random.uniform(1.0, 50.0), 2)
+        edges.append({
+            'id': edge_id,
+            'source': nodes[i],
+            'target': nodes[i + 1],
+            'distance': weight
+        })
+        edge_id += 1
+    
+    # Add some random edges to create cycles (ensuring at least one cycle)
+    min_extra_edges = max(1, num_nodes // 4)  # At least 1 extra edge to create a cycle
+    max_extra_edges = num_nodes // 2 + min_extra_edges
+    num_extra_edges = random.randint(min_extra_edges, max_extra_edges)
+    
+    for _ in range(num_extra_edges):
+        source = random.choice(nodes)
+        target = random.choice(nodes)
+        
+        # Ensure we're not creating a self-loop or duplicate edge
+        while source == target or any(e['source'] == source and e['target'] == target for e in edges):
+            source = random.choice(nodes)
+            target = random.choice(nodes)
+        
+        weight = round(random.uniform(1.0, 50.0), 2)
+        edges.append({
+            'id': edge_id,
+            'source': source,
+            'target': target,
+            'distance': weight
+        })
+        edge_id += 1
+    
+    end_time = time.time()
+    print(f"Generated random graph in {end_time - start_time:.2f} seconds")
+    print(f"Nodes: {num_nodes}, Edges: {len(edges)}")
+    print("="*50 + "\n")
+    
+    return {
+        'nodes': [{'id': node} for node in nodes],
+        'edges': edges
+    }
+
 @app.route('/')
 def index():
     """Main page route"""
@@ -179,6 +240,12 @@ def get_graph_data(dataset):
         return jsonify({'error': 'Invalid dataset'}), 400
         
     try:
+        # Handle generated dataset
+        if dataset == 'generated':
+            graph_data = generate_random_graph()
+            return jsonify(graph_data)
+        
+        # Handle regular datasets
         graph_data = read_graph_data(DATASETS[dataset])
         return jsonify(graph_data)
     except Exception as e:
@@ -192,6 +259,13 @@ def run_kruskal(dataset):
         return jsonify({'error': 'Invalid dataset'}), 400
         
     try:
+        # Handle generated dataset
+        if dataset == 'generated':
+            graph_data = generate_random_graph()
+            result = kruskal_mst_with_steps(graph_data['edges'])
+            return jsonify(result)
+        
+        # Handle regular datasets
         graph_data = read_graph_data(DATASETS[dataset])
         result = kruskal_mst_with_steps(graph_data['edges'])
         return jsonify(result)

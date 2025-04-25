@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MST Visualization - Kruskal's Algorithm</title>
+    <title>MST Visualization</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="/static/js/graphgenerator.js"></script>
     <style>
         .container-fluid {
             padding: 20px;
@@ -22,7 +23,7 @@
             border-radius: 10px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
             margin-top: 20px;
-            height: calc(100vh - 300px);
+            height: calc(100vh - 350px);
             min-height: 500px;
             position: relative;
         }
@@ -30,6 +31,14 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            display: none;
         }
         .zoom-controls {
             position: absolute;
@@ -41,17 +50,22 @@
             margin: 2px;
         }
         .edge-label {
-            font-size: 10px;
+            font-size: 8px;
             fill: #666;
             text-anchor: middle;
             pointer-events: none;
+        }
+        .edge-weight-bg {
+            fill: white;
+            rx: 3;
+            ry: 3;
         }
         .status-bar {
             position: absolute;
             bottom: 10px;
             left: 10px;
             right: 10px;
-            background: rgba(255, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 0.95);
             padding: 10px;
             border-radius: 5px;
             display: none;
@@ -62,7 +76,7 @@
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
             margin-top: 20px;
             padding: 15px;
-            max-height: 200px;
+            max-height: 150px;
             overflow-y: auto;
         }
         .mst-edge {
@@ -81,9 +95,18 @@
             background: #d4edda;
             border: 1px solid #c3e6cb;
         }
-        .mst-edge.rejected {
-            background: #f8d7da;
-            border: 1px solid #f5c6cb;
+        .node {
+            fill: #000;
+            stroke: #fff;
+            stroke-width: 0.8px;
+        }
+        .node-label {
+            font-size: 5px;
+            fill: #fff;
+            text-anchor: middle;
+            dominant-baseline: middle;
+            pointer-events: none;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -94,10 +117,11 @@
                 <div class="control-panel">
                     <h2 class="mb-4">Road Network MST Visualization</h2>
                     <div class="row">
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <div class="form-group">
                                 <label for="datasetSelect" class="form-label">Select Road Network Dataset</label>
                                 <select class="form-select" id="datasetSelect">
+                                    <option value="generated">Generated Graph (8-20 nodes)</option>
                                     <option value="san_francisco">San Francisco Road Network</option>
                                     <option value="san_joaquin">San Joaquin County Road Network</option>
                                     <option value="oldenburg">Oldenburg Road Network</option>
@@ -105,18 +129,12 @@
                                 </select>
                             </div>
                         </div>
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label for="speedRange" class="form-label">Animation Speed</label>
-                                <input type="range" class="form-range" id="speedRange" min="1" max="100" value="50">
-                            </div>
-                        </div>
-                        <div class="col-md-4 d-flex align-items-end">
+                        <div class="col-md-6 d-flex align-items-end">
                             <button id="constructButton" class="btn btn-primary">
                                 <i class="fas fa-project-diagram"></i> Construct Graph
                             </button>
                             <button id="runKruskalButton" class="btn btn-success ms-2" disabled>
-                                <i class="fas fa-play"></i> Run Kruskal's
+                                <i class="fas fa-play"></i> Run Kruskal's Algorithm
                             </button>
                         </div>
                     </div>
@@ -135,6 +153,9 @@
                         </button>
                     </div>
                     <div id="graph-container"></div>
+                    <div class="loading">
+                        <i class="fas fa-spinner fa-spin"></i> Loading graph...
+                    </div>
                     <div class="status-bar" id="statusBar">
                         <div class="d-flex justify-content-between align-items-center">
                             <span id="stepInfo"></span>
@@ -154,14 +175,11 @@
     <script>
         let svg, simulation, zoom;
         let currentGraph = null;
-        let isProcessing = false;
+        const width = document.getElementById('graph-container').clientWidth;
+        const height = document.getElementById('graph-container').clientHeight;
         let transform = d3.zoomIdentity;
 
         function initializeGraph() {
-            const container = document.getElementById('graph-container');
-            const width = container.clientWidth;
-            const height = container.clientHeight;
-            
             d3.select('#graph-container').html('');
             
             svg = d3.select('#graph-container')
@@ -178,191 +196,63 @@
 
             svg.call(zoom);
             svg.append('g');
-            
-            return { width, height };
         }
 
         function constructGraph() {
-            if (isProcessing) return;
-            isProcessing = true;
-
             const dataset = document.getElementById('datasetSelect').value;
+            document.querySelector('.loading').style.display = 'block';
             document.getElementById('mstResults').style.display = 'none';
+            document.getElementById('statusBar').style.display = 'none';
             
             fetch(`/get_graph_data/${dataset}`)
                 .then(response => response.json())
                 .then(data => {
                     currentGraph = data;
-                    renderGraph(data);
+                    document.querySelector('.loading').style.display = 'none';
+                    
+                    // Use the imported function from graphgenerator.js
+                    initializeGraph();
+                    simulation = renderGraph(data, svg, width, height, zoom, transform);
+                    
                     document.getElementById('runKruskalButton').disabled = false;
                 })
                 .catch(error => {
                     console.error('Error:', error);
+                    document.querySelector('.loading').style.display = 'none';
                     alert('Error loading graph data');
-                })
-                .finally(() => {
-                    isProcessing = false;
                 });
         }
 
-        function renderGraph(data) {
-            const { width, height } = initializeGraph();
-            const g = svg.select('g');
-
-            // Create edges
-            const edges = g.selectAll('.edge')
-                .data(data.edges)
-                .enter()
-                .append('g')
-                .attr('class', 'edge')
-                .attr('id', d => `edge-${d.id}`);
-
-            edges.append('line')
-                .style('stroke', '#999')
-                .style('stroke-opacity', 0.6)
-                .style('stroke-width', 1);
-
-            edges.append('text')
-                .attr('class', 'edge-label')
-                .text(d => d.distance.toFixed(1))
-                .style('fill', '#666');
-
-            // Create nodes
-            const nodes = g.selectAll('.node')
-                .data(data.nodes)
-                .enter()
-                .append('circle')
-                .attr('r', 3)
-                .style('fill', '#69b3a2');
-
-            // Setup force simulation
-            simulation = d3.forceSimulation(data.nodes)
-                .force('link', d3.forceLink(data.edges)
-                    .id(d => d.id)
-                    .distance(d => Math.min(100, d.distance * 0.1)))
-                .force('charge', d3.forceManyBody().strength(-30))
-                .force('center', d3.forceCenter(width / 2, height / 2))
-                .force('collision', d3.forceCollide().radius(5));
-
-            simulation.on('tick', () => {
-                edges.select('line')
-                    .attr('x1', d => d.source.x)
-                    .attr('y1', d => d.source.y)
-                    .attr('x2', d => d.target.x)
-                    .attr('y2', d => d.target.y);
-
-                edges.select('text')
-                    .attr('x', d => (d.source.x + d.target.x) / 2)
-                    .attr('y', d => (d.source.y + d.target.y) / 2);
-
-                nodes
-                    .attr('cx', d => d.x)
-                    .attr('cy', d => d.y);
-            });
-
-            // Center the graph
-            setTimeout(() => {
-                const bounds = g.node().getBBox();
-                const scale = 0.9 * Math.min(
-                    width / bounds.width,
-                    height / bounds.height
-                );
-                const tx = width / 2 - (bounds.x + bounds.width / 2) * scale;
-                const ty = height / 2 - (bounds.y + bounds.height / 2) * scale;
-                
-                svg.transition()
-                    .duration(500)
-                    .call(zoom.transform, d3.zoomIdentity
-                        .translate(tx, ty)
-                        .scale(scale));
-            }, 100);
-        }
-
         async function runKruskalMST() {
-            if (isProcessing) return;
-            isProcessing = true;
-
+            if (!currentGraph) return;
+            
             const runButton = document.getElementById('runKruskalButton');
             const dataset = document.getElementById('datasetSelect').value;
-            const animationSpeed = document.getElementById('speedRange').value;
-            const delay = 2000 / animationSpeed;
             const statusBar = document.getElementById('statusBar');
             const mstResults = document.getElementById('mstResults');
             const mstEdgesList = document.getElementById('mstEdgesList');
-
+            
             try {
                 runButton.disabled = true;
-                statusBar.style.display = 'block';
-                mstResults.style.display = 'block';
-                mstEdgesList.innerHTML = '';
-
+                
                 const response = await fetch(`/run_kruskal/${dataset}`);
                 if (!response.ok) throw new Error('Network response was not ok');
                 
                 const result = await response.json();
-
-                // Reset all edges
-                svg.selectAll('.edge line')
-                    .style('stroke', '#999')
-                    .style('stroke-opacity', 0.6)
-                    .style('stroke-width', 1);
-
-                // Process each step
-                for (const step of result.steps) {
-                    const edge = svg.select(`#edge-${step.edge_id}`);
-                    if (edge.empty()) continue;
-
-                    const line = edge.select('line');
-                    const edgeInfo = currentGraph.edges.find(e => e.id === step.edge_id);
-                    
-                    // Update status bar
-                    document.getElementById('stepInfo').textContent = 
-                        `Checking edge ${step.edge_id} (${edgeInfo.source} → ${edgeInfo.target}, weight: ${step.weight})`;
-                    document.getElementById('totalWeight').textContent = 
-                        step.total_weight.toFixed(2);
-
-                    // Create or update edge element in results list
-                    const edgeElement = document.createElement('div');
-                    edgeElement.className = `mst-edge ${step.status}`;
-                    edgeElement.textContent = `${edgeInfo.source} → ${edgeInfo.target} (${step.weight})`;
-                    edgeElement.id = `mst-edge-${step.edge_id}`;
-                    
-                    if (step.status === 'checking') {
-                        line.style('stroke', '#007bff')
-                            .style('stroke-width', 2)
-                            .style('stroke-opacity', 1);
-                        mstEdgesList.appendChild(edgeElement);
-                    } else if (step.status === 'rejected') {
-                        line.style('stroke', '#dc3545')
-                            .style('stroke-width', 2)
-                            .style('stroke-opacity', 1);
-                        
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        
-                        line.style('stroke', '#999')
-                            .style('stroke-width', 1)
-                            .style('stroke-opacity', 0.6);
-                            
-                        edgeElement.remove();
-                    } else if (step.status === 'accepted') {
-                        line.style('stroke', '#28a745')
-                            .style('stroke-width', 2)
-                            .style('stroke-opacity', 1);
-                        
-                        const existingEdge = document.getElementById(`mst-edge-${step.edge_id}`);
-                        if (existingEdge) {
-                            existingEdge.className = 'mst-edge accepted';
-                        }
-                    }
-
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                }
+                
+                // Update currentGraph with Kruskal results
+                currentGraph.steps = result.steps;
+                currentGraph.mst_edges = result.mst_edges;
+                currentGraph.total_weight = result.total_weight;
+                
+                // Use the imported function from graphgenerator.js
+                await runKruskalVisualization(currentGraph, svg, mstResults, mstEdgesList, statusBar);
+                
             } catch (error) {
                 console.error('Error:', error);
                 alert('Error running Kruskal\'s algorithm');
             } finally {
                 runButton.disabled = false;
-                isProcessing = false;
             }
         }
 
@@ -377,13 +267,6 @@
         });
         document.getElementById('resetZoom').addEventListener('click', () => {
             svg.transition().call(zoom.transform, d3.zoomIdentity);
-        });
-
-        // Handle window resize
-        window.addEventListener('resize', () => {
-            if (currentGraph) {
-                renderGraph(currentGraph);
-            }
         });
     </script>
 </body>
