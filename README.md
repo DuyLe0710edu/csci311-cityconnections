@@ -8,6 +8,8 @@ A web-based visualization tool for **Minimum Spanning Tree (MST)** algorithms on
 
 This application provides an interactive visualization of **Kruskal's** and **Prim's** algorithms for finding the minimum spanning tree in road network graphs. It allows users to select different datasets, visualize the algorithm's execution step-by-step, and see the final MST with the total weight.
 
+![Subgraph Visualization](algorithm/images/Subgraph.png)
+
 ## Tech Stack
 
 - **Backend**: Python, Flask
