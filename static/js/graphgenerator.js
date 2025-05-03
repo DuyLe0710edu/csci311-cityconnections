@@ -179,6 +179,23 @@ async function runKruskalVisualization(currentGraph, svg, mstResults, mstEdgesLi
             .style('stroke', '#999')
             .style('stroke-opacity', 0.6)
             .style('stroke-width', 1);
+        
+        // Determine visualization speed based on graph size and user preference
+        const isSmallGraph = isGeneratedGraph(currentGraph.nodes);
+        
+        // Get speed control value (0-100, where 100 is fastest)
+        const speedControl = document.getElementById('speedControl');
+        const speedValue = speedControl ? parseInt(speedControl.value) : 50;
+        
+        // Calculate delay - invert the speed value (100 = fast = low delay)
+        // For small graphs: between 500ms (slowest) and 50ms (fastest)
+        // For large graphs: between 50ms (slowest) and 0ms (fastest)
+        const maxDelay = isSmallGraph ? 500 : 50;
+        const minDelay = isSmallGraph ? 50 : 0;
+        const checkingDelay = maxDelay - ((speedValue / 100) * (maxDelay - minDelay));
+        
+        // For rejection highlight, use a bit longer delay
+        const rejectionDelay = checkingDelay * 1.5;
 
         // Process each step
         for (const step of currentGraph.steps) {
@@ -197,11 +214,15 @@ async function runKruskalVisualization(currentGraph, svg, mstResults, mstEdgesLi
             const sourceId = typeof edgeInfo.source === 'object' ? edgeInfo.source.id : edgeInfo.source;
             const targetId = typeof edgeInfo.target === 'object' ? edgeInfo.target.id : edgeInfo.target;
             
-            // Update status bar
+            // Update status bar (not the final results panel)
             document.getElementById('stepInfo').textContent = 
                 `Checking edge ${step.edge_id} (${sourceId} → ${targetId}, weight: ${edgeInfo.distance.toFixed(2)})`;
-            document.getElementById('totalWeight').textContent = 
-                step.total_weight.toFixed(2);
+            
+            // Only update the status bar's total weight, not the final results panel
+            const statusBarWeight = document.getElementById('statusBarWeight');
+            if (statusBarWeight) {
+                statusBarWeight.textContent = step.total_weight.toFixed(2);
+            }
                 
             if (step.status === 'checking') {
                 line.style('stroke', '#007bff')
@@ -231,7 +252,7 @@ async function runKruskalVisualization(currentGraph, svg, mstResults, mstEdgesLi
                     .style('stroke-width', 2)
                     .style('stroke-opacity', 1);
                 
-                await new Promise(resolve => setTimeout(resolve, 300));
+                await new Promise(resolve => setTimeout(resolve, rejectionDelay));
                 
                 line.style('stroke', '#999')
                     .style('stroke-width', 1)
@@ -244,7 +265,8 @@ async function runKruskalVisualization(currentGraph, svg, mstResults, mstEdgesLi
                 }
             }
             
-            await new Promise(resolve => setTimeout(resolve, 30));
+            // Wait between steps - use speed based on slider and graph size
+            await new Promise(resolve => setTimeout(resolve, checkingDelay));
         }
     } catch (error) {
         console.error('Error in Kruskal visualization:', error);

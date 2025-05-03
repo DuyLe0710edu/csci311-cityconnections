@@ -53,20 +53,14 @@ class UnionFind:
             self.rank[px] += 1
         return True
 
-def read_graph_data(dataset_path, max_edges=None):
-    """Read and parse graph data from file with efficient memory usage"""
-    print(f"\n{'='*50}")
-    print(f"Starting graph construction from: {dataset_path}")
-    start_time = time.time()
-    
+def read_graph_data(dataset_path, max_edges=10000):
+    """Read and parse graph data from file"""
     nodes = set()
     edges = []
-    edge_id = 0
     
-    print("Reading file and processing edges...")
     with open(dataset_path, 'r') as f:
         for i, line in enumerate(f):
-            if max_edges and i >= max_edges:
+            if i >= max_edges:  # Limit edges for initial visualization
                 break
                 
             parts = line.strip().split()
@@ -78,23 +72,19 @@ def read_graph_data(dataset_path, max_edges=None):
                 nodes.add(source)
                 nodes.add(target)
                 edges.append({
-                    'id': edge_id,
+                    'id': i,  # Use line number as edge ID
                     'source': source,
                     'target': target,
                     'distance': weight
                 })
-                edge_id += 1
-                
-                if i > 0 and i % 1000 == 0:
-                    print(f"Processed {i} edges...")
     
-    end_time = time.time()
-    print(f"Graph construction completed in {end_time - start_time:.2f} seconds")
-    print(f"Total nodes: {len(nodes)}, Total edges: {len(edges)}")
-    print("="*50 + "\n")
+    # Convert nodes to list of dictionaries
+    nodes = [{'id': node_id} for node_id in nodes]
+    
+    print(f"Graph loaded: {len(nodes)} nodes, {len(edges)} edges")
     
     return {
-        'nodes': [{'id': node} for node in nodes],
+        'nodes': nodes,
         'edges': edges
     }
 
@@ -222,6 +212,99 @@ def generate_random_graph(min_nodes=8, max_nodes=20):
         'edges': edges
     }
 
+def prim_mst_with_steps(edges):
+    """Implementation of Prim's algorithm with step tracking for visualization"""
+    print("Starting Prim's Algorithm...")
+    start_time = time.time()
+    
+    # Build adjacency list
+    graph = defaultdict(list)
+    nodes = set()
+    
+    for edge in edges:
+        source = edge['source']
+        target = edge['target']
+        weight = edge['distance']
+        edge_id = edge['id']
+        
+        graph[source].append((weight, edge_id, source, target))
+        graph[target].append((weight, edge_id, target, source))
+        
+        nodes.add(source)
+        nodes.add(target)
+    
+    num_nodes = len(nodes)
+    visited = {node: False for node in nodes}
+    min_heap = []
+    steps = []
+    mst_edges = []
+    total_weight = 0
+    edges_processed = 0
+    
+    # Start from the first node in the graph
+    start_node = edges[0]['source']
+    visited[start_node] = True
+    
+    # Add edges from the starting node to the heap
+    for weight, edge_id, u, v in graph[start_node]:
+        heapq.heappush(min_heap, (weight, edge_id, u, v))
+    
+    # Run Prim's algorithm
+    while min_heap and len(mst_edges) < num_nodes - 1:
+        weight, edge_id, u, v = heapq.heappop(min_heap)
+        edges_processed += 1
+        
+        # Record checking step
+        steps.append({
+            'edge_id': edge_id,
+            'weight': weight,
+            'status': 'checking',
+            'total_weight': total_weight
+        })
+        
+        if visited[v]:
+            # If target node is already visited, skip this edge
+            steps.append({
+                'edge_id': edge_id,
+                'weight': weight,
+                'status': 'rejected',
+                'total_weight': total_weight
+            })
+            continue
+        
+        # Accept this edge
+        visited[v] = True
+        
+        # Find the actual edge object for the MST result
+        edge_obj = next((e for e in edges if e['id'] == edge_id), None)
+        if edge_obj:
+            mst_edges.append(edge_obj)
+            total_weight += weight
+            
+            steps.append({
+                'edge_id': edge_id,
+                'weight': weight,
+                'status': 'accepted',
+                'total_weight': total_weight
+            })
+            
+            # Add all edges from the newly added node
+            for next_weight, next_edge_id, v_from, v_to in graph[v]:
+                if not visited[v_to]:
+                    heapq.heappush(min_heap, (next_weight, next_edge_id, v_from, v_to))
+    
+    end_time = time.time()
+    print(f"Prim's Algorithm completed in {end_time - start_time:.2f} seconds")
+    print(f"Edges processed: {edges_processed}")
+    print(f"MST edges: {len(mst_edges)}, Total weight: {total_weight:.2f}")
+    print("="*50 + "\n")
+    
+    return {
+        'mst_edges': mst_edges,
+        'total_weight': total_weight,
+        'steps': steps
+    }
+
 @app.route('/')
 def index():
     """Main page route"""
@@ -265,12 +348,198 @@ def run_kruskal(dataset):
             result = kruskal_mst_with_steps(graph_data['edges'])
             return jsonify(result)
         
-        # Handle regular datasets
+        # Handle regular datasets - visualization subset
         graph_data = read_graph_data(DATASETS[dataset])
+        
+        # Run algorithm on visualization subset (for step visualization)
         result = kruskal_mst_with_steps(graph_data['edges'])
+        
+        # Check if we need to process more data
+        try:
+            with open(DATASETS[dataset], 'r') as f:
+                total_lines = sum(1 for _ in f)
+            
+            # If we have more data than our visualization subset
+            if total_lines > 10000:
+                print(f"Dataset has {total_lines} edges. Processing the rest without visualization steps...")
+                
+                # Load the rest of the edges (starting from where we left off)
+                remaining_edges = []
+                with open(DATASETS[dataset], 'r') as f:
+                    # Skip the edges we've already processed
+                    for i in range(10000):
+                        next(f)
+                    
+                    # Read the rest
+                    for i, line in enumerate(f, start=10000):
+                        parts = line.strip().split()
+                        if len(parts) >= 3:
+                            source, target, weight = map(float, parts[:3])
+                            source = int(source)
+                            target = int(target)
+                            
+                            remaining_edges.append({
+                                'id': i,
+                                'source': source,
+                                'target': target,
+                                'distance': weight
+                            })
+                
+                # Continue the MST calculation from where we left off
+                if remaining_edges:
+                    # Get the current UnionFind state from the first phase
+                    uf = UnionFind()
+                    for edge in result['mst_edges']:
+                        uf.union(edge['source'], edge['target'])
+                    
+                    current_total_weight = result['total_weight']
+                    
+                    # Process remaining edges
+                    for edge in sorted(remaining_edges, key=lambda x: x['distance']):
+                        if uf.union(edge['source'], edge['target']):
+                            # Edge accepted into MST
+                            result['mst_edges'].append(edge)
+                            current_total_weight += edge['distance']
+                    
+                    # Update the total weight
+                    result['total_weight'] = current_total_weight
+                    print(f"Final MST weight after processing all edges: {current_total_weight:.2f}")
+        
+        except Exception as e:
+            print(f"Warning: Couldn't process the entire dataset: {str(e)}. Using subset result.")
+        
         return jsonify(result)
+        
     except Exception as e:
         print(f"Error running Kruskal's algorithm: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/run_prims/<dataset>')
+def run_prims(dataset):
+    """Run Prim's algorithm and return steps for visualization"""
+    if dataset not in DATASETS:
+        return jsonify({'error': 'Invalid dataset'}), 400
+        
+    try:
+        # Handle generated dataset
+        if dataset == 'generated':
+            graph_data = generate_random_graph()
+            result = prim_mst_with_steps(graph_data['edges'])
+            return jsonify(result)
+        
+        # Handle regular datasets - visualization subset
+        graph_data = read_graph_data(DATASETS[dataset])
+        
+        # Run algorithm on visualization subset (for step visualization)
+        result = prim_mst_with_steps(graph_data['edges'])
+        
+        # Check if we need to process more data
+        try:
+            with open(DATASETS[dataset], 'r') as f:
+                total_lines = sum(1 for _ in f)
+            
+            # If we have more data than our visualization subset
+            if total_lines > 10000:
+                print(f"Dataset has {total_lines} edges. Processing the rest without visualization steps...")
+                
+                # Load the rest of the edges (starting from where we left off)
+                remaining_edges = []
+                with open(DATASETS[dataset], 'r') as f:
+                    # Skip the edges we've already processed
+                    for i in range(10000):
+                        next(f)
+                    
+                    # Read the rest
+                    for i, line in enumerate(f, start=10000):
+                        parts = line.strip().split()
+                        if len(parts) >= 3:
+                            source, target, weight = map(float, parts[:3])
+                            source = int(source)
+                            target = int(target)
+                            
+                            remaining_edges.append({
+                                'id': i,
+                                'source': source,
+                                'target': target,
+                                'distance': weight
+                            })
+                
+                # For Prim's, we need to reconstruct the complete graph and reprocess
+                if remaining_edges:
+                    # Combine both sets of edges
+                    all_edges = graph_data['edges'] + remaining_edges
+                    
+                    # Build adjacency list
+                    graph = defaultdict(list)
+                    nodes = set()
+                    
+                    for edge in all_edges:
+                        source = edge['source']
+                        target = edge['target']
+                        weight = edge['distance']
+                        edge_id = edge['id']
+                        
+                        graph[source].append((weight, edge_id, source, target))
+                        graph[target].append((weight, edge_id, target, source))
+                        
+                        nodes.add(source)
+                        nodes.add(target)
+                    
+                    # Get the currently visualized MST nodes
+                    visualized_nodes = set()
+                    for edge in result['mst_edges']:
+                        visualized_nodes.add(edge['source'])
+                        visualized_nodes.add(edge['target'])
+                    
+                    # Process the full graph but don't overwrite the visualization steps
+                    visited = {node: False for node in nodes}
+                    mst_edges = []
+                    total_weight = 0
+                    
+                    # Start from a node we already visited
+                    start_node = next(iter(visualized_nodes))
+                    visited[start_node] = True
+                    
+                    # Use the same priority queue algorithm
+                    min_heap = []
+                    for weight, edge_id, u, v in graph[start_node]:
+                        heapq.heappush(min_heap, (weight, edge_id, u, v))
+                    
+                    while min_heap:
+                        weight, edge_id, u, v = heapq.heappop(min_heap)
+                        
+                        if visited[v]:
+                            continue
+                        
+                        # Accept this edge
+                        visited[v] = True
+                        
+                        # Find the actual edge object
+                        edge_obj = next((e for e in all_edges if e['id'] == edge_id), None)
+                        if edge_obj:
+                            mst_edges.append(edge_obj)
+                            total_weight += weight
+                            
+                            # Add all edges from the newly added node
+                            for next_weight, next_edge_id, v_from, v_to in graph[v]:
+                                if not visited[v_to]:
+                                    heapq.heappush(min_heap, (next_weight, next_edge_id, v_from, v_to))
+                    
+                    # Get only the visualized subset of edges for UI display
+                    viz_mst_edges = [edge for edge in mst_edges if edge['id'] < 10000]
+                    
+                    # Update result with correct total weight but keep viz steps
+                    result['total_weight'] = total_weight
+                    result['mst_edges'] = viz_mst_edges
+                    print(f"Final MST weight after processing all edges: {total_weight:.2f}")
+        
+        except Exception as e:
+            print(f"Warning: Couldn't process the entire dataset: {str(e)}. Using subset result.")
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Error running Prim's algorithm: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
