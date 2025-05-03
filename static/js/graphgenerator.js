@@ -44,20 +44,33 @@ function renderGraph(data, svg, width, height, zoom, transform) {
         .style('stroke-opacity', 0.6)
         .style('stroke-width', 1);
 
-    // Add edge weight labels for all graphs
+    // Add edge weight labels with optimization for large graphs
     const edgeLabels = edges.append('g')
         .attr('class', 'edge-label-group');
 
+    // Adjust size and opacity based on graph size for better performance
+    const fontSize = data.nodes.length > 100 ? '4px' : '8px';
+    const rectWidth = data.nodes.length > 100 ? 20 : 30;
+    const rectHeight = data.nodes.length > 100 ? 10 : 14;
+    const showAllLabels = data.nodes.length <= 300;
+    
+    // For very large graphs, only show labels on hover
+    if (data.nodes.length > 300) {
+        edgeLabels.style('opacity', 0);
+    }
+
     edgeLabels.append('rect')
         .attr('class', 'edge-weight-bg')
-        .attr('x', -15)
-        .attr('y', -7)
-        .attr('width', 30)
-        .attr('height', 14)
-        .style('opacity', 0.7);
+        .attr('x', -rectWidth/2)
+        .attr('y', -rectHeight/2)
+        .attr('width', rectWidth)
+        .attr('height', rectHeight)
+        .style('opacity', data.nodes.length > 100 ? 0.5 : 0.7);
 
     edgeLabels.append('text')
         .attr('class', 'edge-label')
+        .attr('dy', '0.3em')
+        .style('font-size', fontSize)
         .text(d => d.distance.toFixed(1));
 
     // Draw nodes (all graphs have black dots)
@@ -111,6 +124,7 @@ function renderGraph(data, svg, width, height, zoom, transform) {
             .style('stroke-width', 2)
             .style('stroke-opacity', 1);
         d3.select(this).selectAll('.edge-label-group')
+            .style('opacity', 1)
             .style('font-weight', 'bold');
     }).on('mouseout', function() {
         const edge = d3.select(this);
@@ -119,6 +133,13 @@ function renderGraph(data, svg, width, height, zoom, transform) {
                 .style('stroke-width', 1)
                 .style('stroke-opacity', 0.6);
         }
+        
+        // For very large graphs, hide labels again on mouseout
+        if (data.nodes.length > 300) {
+            edge.selectAll('.edge-label-group')
+                .style('opacity', 0);
+        }
+        
         edge.selectAll('.edge-label-group')
             .style('font-weight', 'normal');
     });
