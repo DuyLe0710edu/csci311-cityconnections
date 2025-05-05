@@ -108,6 +108,41 @@
             pointer-events: none;
             font-weight: bold;
         }
+        .celebration {
+            font-size: 18px;
+            color: #28a745;
+            font-weight: bold;
+            text-align: center;
+            margin-top: 10px;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 0.7; }
+            50% { opacity: 1; }
+            100% { opacity: 0.7; }
+        }
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: confetti-fall 10s ease-out forwards;
+        }
+        @keyframes confetti-fall {
+            0% { transform: translateY(-50px) rotate(0deg); opacity: 1; }
+            80% { opacity: 0.8; }
+            100% { transform: translateY(100px) rotate(720deg); opacity: 0; }
+        }
+        .highlight-weight {
+            animation: highlight-pulse 2s ease-in-out;
+            font-size: 110%;
+            color: #28a745;
+        }
+        @keyframes highlight-pulse {
+            0% { color: inherit; font-size: 100%; }
+            50% { color: #28a745; font-size: 120%; }
+            100% { color: #28a745; font-size: 110%; }
+        }
     </style>
 </head>
 <body>
@@ -128,6 +163,20 @@
                                     <option value="north_america">North America Road Network</option>
                                 </select>
                             </div>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="useDirectRenderingCheck">
+                                <label class="form-check-label" for="useDirectRenderingCheck">
+                                    Use direct rendering (index.html style)
+                                </label>
+                            </div>
+                            <div class="form-group mt-2">
+                                <label for="speedControl" class="form-label">Visualization Speed</label>
+                                <input type="range" class="form-range" id="speedControl" min="0" max="100" value="50">
+                                <div class="d-flex justify-content-between">
+                                    <small>Slower (Educational)</small>
+                                    <small>Faster</small>
+                                </div>
+                            </div>
                         </div>
                         <div class="col-md-6 d-flex align-items-end">
                             <button id="constructButton" class="btn btn-primary">
@@ -135,6 +184,9 @@
                             </button>
                             <button id="runKruskalButton" class="btn btn-success ms-2" disabled>
                                 <i class="fas fa-play"></i> Run Kruskal's Algorithm
+                            </button>
+                            <button id="runPrimsButton" class="btn btn-info ms-2" disabled>
+                                <i class="fas fa-play"></i> Run Prim's Algorithm
                             </button>
                         </div>
                     </div>
@@ -159,7 +211,7 @@
                     <div class="status-bar" id="statusBar">
                         <div class="d-flex justify-content-between align-items-center">
                             <span id="stepInfo"></span>
-                            <span>Total MST Weight: <strong id="totalWeight">0</strong></span>
+                            <span>Total MST Weight: <strong id="statusBarWeight">0</strong></span>
                         </div>
                     </div>
                 </div>
@@ -167,6 +219,19 @@
                 <div class="mst-results" id="mstResults" style="display: none;">
                     <h5>Minimum Spanning Tree Edges</h5>
                     <div id="mstEdgesList"></div>
+                </div>
+
+                <div class="card mt-3" id="resultPanel" style="display: none;">
+                    <div class="card-header">
+                        <span id="algorithmName">Minimum Spanning Tree Results</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="mb-3">Total Weight: <strong id="totalWeight" style="font-size: 1.2em;">0</strong></p>
+                        <p>MST Edges: <span id="edgeCount">0</span></p>
+                        <div id="celebrationContainer" style="display: none;" class="celebration">
+                            <i class="fas fa-check-circle"></i> CALCULATION COMPLETE!
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -203,6 +268,7 @@
             document.querySelector('.loading').style.display = 'block';
             document.getElementById('mstResults').style.display = 'none';
             document.getElementById('statusBar').style.display = 'none';
+            document.getElementById('resultPanel').style.display = 'none';
             
             fetch(`/get_graph_data/${dataset}`)
                 .then(response => response.json())
@@ -210,11 +276,19 @@
                     currentGraph = data;
                     document.querySelector('.loading').style.display = 'none';
                     
-                    // Use the imported function from graphgenerator.js
+                    // Initialize graph
                     initializeGraph();
-                    simulation = renderGraph(data, svg, width, height, zoom, transform);
+                    
+                    // Check if direct rendering is enabled
+                    if (document.getElementById('useDirectRenderingCheck').checked) {
+                        simulation = renderGraphDirect(data);
+                    } else {
+                        // Use the imported function from graphgenerator.js
+                        simulation = renderGraph(data, svg, width, height, zoom, transform);
+                    }
                     
                     document.getElementById('runKruskalButton').disabled = false;
+                    document.getElementById('runPrimsButton').disabled = false;
                 })
                 .catch(error => {
                     console.error('Error:', error);
@@ -223,14 +297,215 @@
                 });
         }
 
+        // Direct renderGraph implementation from index.html
+        function renderGraphDirect(data) {
+            initializeGraph();
+            
+            // Create force simulation
+            simulation = d3.forceSimulation(data.nodes)
+                .force('link', d3.forceLink(data.edges)
+                    .id(d => d.id)
+                    .distance(d => d.distance * 0.1))
+                .force('charge', d3.forceManyBody().strength(-30))
+                .force('center', d3.forceCenter(width / 2, height / 2));
+
+            const g = svg.select('g');
+
+            // Draw edges
+            const edges = g.selectAll('.edge')
+                .data(data.edges)
+                .enter()
+                .append('g')
+                .attr('class', 'edge')
+                .attr('id', d => `edge-${d.id}`);
+
+            // Add lines for edges
+            edges.append('line')
+                .style('stroke', '#999')
+                .style('stroke-opacity', 0.6)
+                .style('stroke-width', 1);
+
+            // Add weight labels with background
+            const edgeLabels = edges.append('g')
+                .attr('class', 'edge-label-group');
+
+            edgeLabels.append('rect')
+                .attr('class', 'edge-weight-bg')
+                .attr('x', -15)
+                .attr('y', -7)
+                .attr('width', 30)
+                .attr('height', 14)
+                .style('opacity', 0.7);
+
+            edgeLabels.append('text')
+                .attr('class', 'edge-label')
+                .text(d => d.distance.toFixed(1));
+
+            // Draw nodes
+            const nodes = g.selectAll('circle')
+                .data(data.nodes)
+                .enter()
+                .append('circle')
+                .attr('r', 3)
+                .style('fill', '#69b3a2');
+
+            // Update positions
+            simulation.on('tick', () => {
+                // Update edge lines
+                edges.selectAll('line')
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+
+                // Update edge labels
+                edges.selectAll('.edge-label-group')
+                    .attr('transform', d => {
+                        const midX = (d.source.x + d.target.x) / 2;
+                        const midY = (d.source.y + d.target.y) / 2;
+                        return `translate(${midX},${midY})`;
+                    });
+
+                // Update nodes
+                nodes
+                    .attr('cx', d => d.x)
+                    .attr('cy', d => d.y);
+            });
+
+            // Add hover effect for better visibility
+            edges.on('mouseover', function() {
+                d3.select(this).selectAll('line')
+                    .style('stroke-width', 2)
+                    .style('stroke-opacity', 1);
+                d3.select(this).selectAll('.edge-label-group')
+                    .style('font-weight', 'bold');
+            }).on('mouseout', function() {
+                d3.select(this).selectAll('line')
+                    .style('stroke-width', 1)
+                    .style('stroke-opacity', 0.6);
+                d3.select(this).selectAll('.edge-label-group')
+                    .style('font-weight', 'normal');
+            });
+            
+            return simulation;
+        }
+
+        // Add a function to toggle between rendering methods
+        function useDirectRendering(enable) {
+            // This function provides an option to switch between direct rendering
+            // and the imported renderGraph function from graphgenerator.js
+            if (enable) {
+                window.originalRenderGraph = window.renderGraph;
+                window.renderGraph = renderGraphDirect;
+            } else if (window.originalRenderGraph) {
+                window.renderGraph = window.originalRenderGraph;
+            }
+        }
+
+        // Simple function to highlight MST edges without step-by-step visualization
+        function visualizeMST(data) {
+            // Highlight MST edges in the graph
+            const edges = svg.selectAll('.edge');
+            
+            // Reset all edges
+            edges.selectAll('line')
+                .style('stroke', '#999')
+                .style('stroke-opacity', 0.3)
+                .style('stroke-width', 1);
+            
+            // Highlight MST edges
+            data.mst_edges.forEach(edge => {
+                edges.filter(d => d.id === edge.id)
+                    .selectAll('line')
+                    .style('stroke', '#ff0000')
+                    .style('stroke-opacity', 1)
+                    .style('stroke-width', 2);
+            });
+            
+            // Update result panel
+            document.getElementById('totalWeight').textContent = data.total_weight.toFixed(2);
+            document.getElementById('edgeCount').textContent = data.mst_edges.length;
+            document.getElementById('resultPanel').style.display = 'block';
+            
+            // Show celebration
+            showCelebration();
+        }
+        
+        // Function to create and show confetti celebration
+        function showCelebration() {
+            const celebrationContainer = document.getElementById('celebrationContainer');
+            
+            // If celebration is already showing, don't show it again
+            if (celebrationContainer.style.display === 'block') {
+                return;
+            }
+            
+            celebrationContainer.style.display = 'block';
+            
+            // Highlight the final weight
+            const totalWeight = document.getElementById('totalWeight');
+            totalWeight.classList.add('highlight-weight');
+            
+            // Create confetti
+            const resultPanel = document.getElementById('resultPanel');
+            const colors = ['#fd6c6c', '#7ec8e3', '#ffeb3b', '#66bb6a', '#26c6da', '#ba68c8'];
+            
+            // Create more confetti that lasts longer
+            for (let i = 0; i < 100; i++) {
+                const confetti = document.createElement('div');
+                confetti.className = 'confetti';
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confetti.style.left = Math.random() * resultPanel.offsetWidth + 'px';
+                confetti.style.animationDuration = (Math.random() * 8 + 4) + 's'; // Longer animation
+                confetti.style.animationDelay = (Math.random() * 20) + 's'; // Staggered delay for continuous effect
+                resultPanel.appendChild(confetti);
+            }
+            
+            // Ensure the result panel is visible
+            resultPanel.scrollIntoView({behavior: 'smooth', block: 'center'});
+            
+            // Remove confetti after 30 seconds
+            setTimeout(() => {
+                const confettis = document.querySelectorAll('.confetti');
+                confettis.forEach(c => c.remove());
+                
+                // Remove highlight after confetti is gone
+                totalWeight.classList.remove('highlight-weight');
+            }, 30000);
+        }
+
+        function resetResultPanel() {
+            // Clear any previous highlights
+            const totalWeight = document.getElementById('totalWeight');
+            if (totalWeight) {
+                totalWeight.classList.remove('highlight-weight');
+            }
+            
+            // Hide celebration message
+            const celebrationContainer = document.getElementById('celebrationContainer');
+            if (celebrationContainer) {
+                celebrationContainer.style.display = 'none';
+            }
+            
+            // Remove any existing confetti
+            const confettis = document.querySelectorAll('.confetti');
+            confettis.forEach(c => c.remove());
+        }
+
         async function runKruskalMST() {
             if (!currentGraph) return;
+            
+            // Reset result panel first
+            resetResultPanel();
             
             const runButton = document.getElementById('runKruskalButton');
             const dataset = document.getElementById('datasetSelect').value;
             const statusBar = document.getElementById('statusBar');
             const mstResults = document.getElementById('mstResults');
             const mstEdgesList = document.getElementById('mstEdgesList');
+            
+            // Update algorithm name in the result panel
+            document.getElementById('algorithmName').textContent = "Kruskal's Algorithm Results";
             
             try {
                 runButton.disabled = true;
@@ -245,8 +520,24 @@
                 currentGraph.mst_edges = result.mst_edges;
                 currentGraph.total_weight = result.total_weight;
                 
+                // Update result panel immediately with the final weight
+                document.getElementById('totalWeight').textContent = result.total_weight.toFixed(2);
+                document.getElementById('edgeCount').textContent = result.mst_edges.length;
+                document.getElementById('resultPanel').style.display = 'block';
+                
+                // Set a timeout to show celebration after max 15 seconds
+                const celebrationTimeout = setTimeout(() => {
+                    showCelebration();
+                }, 15000);
+                
                 // Use the imported function from graphgenerator.js
                 await runKruskalVisualization(currentGraph, svg, mstResults, mstEdgesList, statusBar);
+                
+                // Clear the timeout if visualization completes earlier
+                clearTimeout(celebrationTimeout);
+                
+                // Show celebration after visualization is complete
+                showCelebration();
                 
             } catch (error) {
                 console.error('Error:', error);
@@ -256,9 +547,68 @@
             }
         }
 
+        async function runPrimsMST() {
+            if (!currentGraph) return;
+            
+            // Reset result panel first
+            resetResultPanel();
+            
+            const runButton = document.getElementById('runPrimsButton');
+            const dataset = document.getElementById('datasetSelect').value;
+            const statusBar = document.getElementById('statusBar');
+            const mstResults = document.getElementById('mstResults');
+            const mstEdgesList = document.getElementById('mstEdgesList');
+            
+            // Update algorithm name in the result panel
+            document.getElementById('algorithmName').textContent = "Prim's Algorithm Results";
+            
+            try {
+                runButton.disabled = true;
+                
+                const response = await fetch(`/run_prims/${dataset}`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                
+                const result = await response.json();
+                
+                // Update currentGraph with Prim's results
+                currentGraph.steps = result.steps;
+                currentGraph.mst_edges = result.mst_edges;
+                currentGraph.total_weight = result.total_weight;
+                
+                // Update result panel immediately with the final weight
+                document.getElementById('totalWeight').textContent = result.total_weight.toFixed(2);
+                document.getElementById('edgeCount').textContent = result.mst_edges.length;
+                document.getElementById('resultPanel').style.display = 'block';
+                
+                // Set a timeout to show celebration after max 15 seconds
+                const celebrationTimeout = setTimeout(() => {
+                    showCelebration();
+                }, 15000);
+                
+                // Use the same visualization function as Kruskal's algorithm
+                await runKruskalVisualization(currentGraph, svg, mstResults, mstEdgesList, statusBar);
+                
+                // Clear the timeout if visualization completes earlier
+                clearTimeout(celebrationTimeout);
+                
+                // Show celebration after visualization is complete
+                showCelebration();
+                
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error running Prim\'s algorithm');
+            } finally {
+                runButton.disabled = false;
+            }
+        }
+
         // Event listeners
         document.getElementById('constructButton').addEventListener('click', constructGraph);
         document.getElementById('runKruskalButton').addEventListener('click', runKruskalMST);
+        document.getElementById('runPrimsButton').addEventListener('click', runPrimsMST);
+        document.getElementById('useDirectRenderingCheck').addEventListener('change', function() {
+            useDirectRendering(this.checked);
+        });
         document.getElementById('zoomIn').addEventListener('click', () => {
             svg.transition().call(zoom.scaleBy, 2);
         });
